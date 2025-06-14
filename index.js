@@ -22,49 +22,33 @@ const auth = new google.auth.JWT(
 
 const sheets = google.sheets({ version: "v4", auth });
 
-async function cargarMapaDesdePlanilla() {
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.HOJA_MAESTRA_ID,
-    range: "Hoja1!A1:B", // número | hojaId
-  });
+// async function cargarMapaDesdePlanilla() {
+//   const response = await sheets.spreadsheets.values.get({
+//     spreadsheetId: process.env.HOJA_MAESTRA_ID,
+//     range: "Hoja1!A1:B", // número | hojaId
+//   });
 
-  const filas = response.data.values;
-  const mapa = {};
-  for (const fila of filas) {
-    const numero = fila[0];
-    const hojaId = fila[1];
-    if (numero && hojaId) {
-      mapa[numero] = hojaId;
-    }
-  }
-  return mapa;
-}
+//   const filas = response.data.values;
+//   const mapa = {};
+//   for (const fila of filas) {
+//     const numero = fila[0];
+//     const hojaId = fila[1];
+//     if (numero && hojaId) {
+//       mapa[numero] = hojaId;
+//     }
+//   }
+//   return mapa;
+// }
 
 app.post("/whatsapp", async (req, res) => {
   const incomingMsg = req.body.Body.trim().toLowerCase();
   const from = req.body.From.replace("whatsapp:+", "").replace("+", ""); // deja solo el número
 
   try {
-    // Cargar el mapa de números
-    const mapa = await cargarMapaDesdePlanilla();
-
-    const hojaId = mapa[from];
-    console.log("Número entrante:", from);
-    console.log("Mapa cargado:", mapa);
-    console.log("Hoja asociada:", hojaId);
-    if (!hojaId) {
-      await client.messages.create({
-        from: process.env.TWILIO_WHATSAPP_NUMBER,
-        to: req.body.From,
-        body: "⚠️ No estás registrada. Por favor, contactá con el administrador.",
-      });
-      return res.sendStatus(200);
-    }
-
-    // Buscar en la hoja específica de esta persona
+    // Lee siempre de la misma hoja de precios central
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: hojaId,
-      range: "Hoja1!A2:J",
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: "Hoja1!A2:J", // Ajustá el rango si tu hoja tiene otro nombre o estructura
     });
 
     const rows = response.data.values;
@@ -86,7 +70,7 @@ app.post("/whatsapp", async (req, res) => {
 
     await client.messages.create({
       from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: req.body.From,
+      to: from,
       body: reply,
     });
 
