@@ -41,8 +41,8 @@ const sheets = google.sheets({ version: "v4", auth });
 // }
 
 app.post("/whatsapp", async (req, res) => {
-  const incomingMsg = req.body.Body.trim().toLowerCase();
-  const from = req.body.From.replace("whatsapp:+", "").replace("+", ""); // deja solo el número
+  const incomingMsg = req.body.Body?.trim().toLowerCase();
+  const from = req.body.From 
 
   try {
     // Lee siempre de la misma hoja de precios central
@@ -51,12 +51,12 @@ app.post("/whatsapp", async (req, res) => {
       range: "Hoja1!A2:J", // Ajustá el rango si tu hoja tiene otro nombre o estructura
     });
 
-    const rows = response.data.values;
+    const rows = response.data.values || [];
     let found = false;
     let reply = "";
 
     for (let row of rows) {
-      const producto = row[0].toLowerCase();
+      const producto = (row[0] || '').toLowerCase();
       if (producto.includes(incomingMsg)) {
         reply = `📦 Producto: ${row[0]}\n💳 Precio Lista: *${row[1]}*\n💰 PSVP: *${row[2]}*\n💳 Precio Preferencial: *${row[3]}*\n6 Cuotas: *${row[4]}*\n9 Cuotas: *${row[5]}*\n12 Cuotas: *${row[6]}*\n18 Cuotas: *${row[7]}*\n⭐ Puntos Essen: ${row[8]}\n📝 Observaciones: ${row[9] || "Ninguna"}`;
         found = true;
@@ -70,7 +70,7 @@ app.post("/whatsapp", async (req, res) => {
 
     await client.messages.create({
       from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
-      to: `whatsapp:${from}`,
+      to: from,
       body: reply,
     });
 
