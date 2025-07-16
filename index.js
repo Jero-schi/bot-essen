@@ -1,87 +1,98 @@
-const express = require("express");
-const bodyParser = require("body-parser");
+// Nueva versión para usar con whatsapp-web.js
+envPath = './.env'; // Asegurate de que exista y esté en .gitignore
+require("dotenv").config({ path: envPath });
+
 const { google } = require("googleapis");
-const twilio = require("twilio");
+const { Client, LocalAuth } = require("whatsapp-web.js");
+const qrcode = require("qrcode-terminal");
 
-const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
+// 🔤 Función para quitar tildes y normalizar texto
+function limpiarTexto(texto) {
+  return texto
+    .normalize("NFD") // descompone caracteres Unicode
+    .replace(/[\u0300-\u036f]/g, "") // remueve acentos
+    .toLowerCase()
+    .trim();
+}
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN,
-);
-
-// Configurar autenticación con Google
+// Autenticación de Google Sheets
 const auth = new google.auth.JWT(
   process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   null,
   process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-  ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 );
-
 const sheets = google.sheets({ version: "v4", auth });
 
-// async function cargarMapaDesdePlanilla() {
-//   const response = await sheets.spreadsheets.values.get({
-//     spreadsheetId: process.env.HOJA_MAESTRA_ID,
-//     range: "Hoja1!A1:B", // número | hojaId
-//   });
+console.log('ejecutando index.js actualizado');
 
-//   const filas = response.data.values;
-//   const mapa = {};
-//   for (const fila of filas) {
-//     const numero = fila[0];
-//     const hojaId = fila[1];
-//     if (numero && hojaId) {
-//       mapa[numero] = hojaId;
-//     }
-//   }
-//   return mapa;
-// }
+const client = new Client({
+  authStrategy: new LocalAuth({ dataPath: './session' }),
+  puppeteer: {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  },
+});
 
-app.post("/whatsapp", async (req, res) => {
-  const incomingMsg = req.body.Body?.trim().toLowerCase();
-  const from = req.body.From 
+client.on("qr", (qr) => {
+  qrcode.generate(qr, { small: true });
+});
+
+client.on("ready", () => {
+  console.log("✅ Bot conectado a WhatsApp");
+});
+
+client.on("message", async (message) => {
+  const incomingMsg = limpiarTexto(message.body);
+  const senderNumber = message.from.replace('@c.us', '')
 
   try {
-    // Lee siempre de la misma hoja de precios central
+    // verificar si el usuario esta autorizado
+    const userCheck = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: 'Usuarios!A2:A'
+    })
+
+    const authorizedNumbers = (userCheck.data.values || []).flat()
+
+    if (!authorizedNumbers.includes(senderNumber)) {
+      await message.reply('🚫 No estás autorizado para usar este bot.')
+      console.log(`❌ Acceso denegado para ${senderNumber}`);
+      return      
+    }
+
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: "Hoja1!A2:J", // Ajustá el rango si tu hoja tiene otro nombre o estructura
+      range: "Hoja1!A2:M",
     });
 
     const rows = response.data.values || [];
-    let found = false;
-    let reply = "";
+    const coincidencias = [];
 
     for (let row of rows) {
-      const producto = (row[0] || '').toLowerCase();
+      const producto = (row[0] || "").toLowerCase();
       if (producto.includes(incomingMsg)) {
-        reply = `📦 Producto: ${row[0]}\n💳 Precio Lista: *${row[1]}*\n💰 PSVP: *${row[2]}*\n💳 Precio Preferencial: *${row[3]}*\n6 Cuotas: *${row[4]}*\n9 Cuotas: *${row[5]}*\n12 Cuotas: *${row[6]}*\n18 Cuotas: *${row[7]}*\n⭐ Puntos Essen: ${row[8]}\n📝 Observaciones: ${row[9] || "Ninguna"}`;
-        found = true;
-        break;
+        const reply = `📦 Producto: ${row[0]}\n💳 Precio Lista: *${row[1]}*\n💰 PSVP: *${row[2]}*\n💳 Precio Preferencial: *${row[3]}*\n3 Cuotas: *${row[4]}*\n6 Cuotas: *${row[5]}*\n9 Cuotas: *${row[6]}*\n10 Cuotas: *${row[7]}*\n12 Cuotas: *${row[8]}*\n14 Cuotas: *${row[9]}*\n18 Cuotas: *${row[10]}*`;
+        coincidencias.push({ producto: row[0], texto: reply });
       }
     }
 
-    if (!found) {
-      reply = "❌ Producto no encontrado. Por favor, intentá con otro nombre.";
+    if (coincidencias.length === 0) {
+      await message.reply("❌ Producto no encontrado. Por favor, intentá con otro nombre.");
+    } else if (coincidencias.length === 1) {
+      await message.reply(coincidencias[0].texto);
+    } else if (coincidencias.length <= 5) {
+      const respuestas = coincidencias.map(c => c.texto);
+      await message.reply(respuestas.join("\n\n"));
+    } else {
+      // Muestra solo los nombres
+      const nombres = coincidencias.slice(0, 10).map(c => `🔸 ${c.producto}`);
+      await message.reply(`🔎 Encontré *${coincidencias.length}* coincidencias:\n\n${nombres.join("\n")}\n\n📌 Escribí el nombre más completo para filtrar mejor.`);
     }
-
-    await client.messages.create({
-      from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
-      to: from,
-      body: reply,
-    });
-
-    res.sendStatus(200);
   } catch (error) {
     console.error("Error al procesar la solicitud:", error);
-    res.sendStatus(500);
+    await message.reply("⚠️ Hubo un error al buscar el producto. Intentalo de nuevo más tarde.");
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en el puerto ${PORT}`);
-});
+client.initialize();

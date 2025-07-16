@@ -1,2 +1,15 @@
+# Node modules
 node_modules/
+
+# Variables de entorno
 .env
+
+# Sesiones de WhatsApp-web.js
+.wwebjs_auth/
+session/
+
+# Logs
+*.log
+
+# Credenciales de Google (si las usas en archivo separado)
+google-credentials.json
