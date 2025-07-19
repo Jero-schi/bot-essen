@@ -1,5 +1,7 @@
 node_modules
+.session
+.session/*
 .env
-.git
-.wwebjs_auth
-session/
+*.log
+*.bak
+.DS_Store

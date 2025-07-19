@@ -5,12 +5,14 @@ require("dotenv").config({ path: envPath });
 const { google } = require("googleapis");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
+const fs = require('fs')
 
 // 🔤 Función para quitar tildes y normalizar texto
 function limpiarTexto(texto) {
   return texto
     .normalize("NFD") // descompone caracteres Unicode
-    .replace(/[\u0300-\u036f]/g, "") // remueve acentos
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF\s]/g, '') // remueve acentos
     .toLowerCase()
     .trim();
 }
@@ -38,8 +40,25 @@ client.on("qr", (qr) => {
   qrcode.generate(qr, { small: true });
 });
 
-client.on("ready", () => {
+client.on("ready", async () => {
   console.log("✅ Bot conectado a WhatsApp");
+
+  try {
+    const resUsuarios = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: "Usuarios!A2:A",
+    });
+
+    const usuariosAutorizados = (resUsuarios.data.values || []).flat();
+    console.log("📋 Usuarios autorizados:");
+    usuariosAutorizados.forEach((num, i) => {
+      console.log(`${i + 1}. ${num}`);
+    });
+
+    // fs.writeFileSync('usuarios.log', usuariosAutorizados.join('\n')); // opcional
+  } catch (error) {
+    console.error("❌ Error al obtener usuarios autorizados:", error);
+  }
 });
 
 client.on("message", async (message) => {
@@ -58,6 +77,8 @@ client.on("message", async (message) => {
     if (!authorizedNumbers.includes(senderNumber)) {
       await message.reply('🚫 No estás autorizado para usar este bot.')
       console.log(`❌ Acceso denegado para ${senderNumber}`);
+      console.log(authorizedNumbers);
+      
       return      
     }
 
